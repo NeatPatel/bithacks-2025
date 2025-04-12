@@ -44,14 +44,18 @@ void loop() {
 void rotate_c() {
   // step once in clockwise direction:
   Serial.println("clockwise");
-  //myStepper.step(1);
-  delay(50);
+
+  for(int i = 0; i < 360; ++i) {
+    myStepper.step();
+  }
+
+  delay(1000);
 }
 
 void rotate_cc() {
   // step once in the counterclockwise direction:
   Serial.println("counterclockwise");
-  //myStepper.step(-1);
-  delay(50);
+  myStepper.step(-512);
+  delay(1000);
 }
 
