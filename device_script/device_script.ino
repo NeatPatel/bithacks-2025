@@ -74,6 +74,7 @@ void set_long_lat() {
     longitude = gps.location.lng();
     latitude = gps.location.lat();
 
+    // Temporary target location initialization, use button instead
     if(target_lng == UNDEFINED_VALUE) {
       target_lng = longitude;
       target_lat = latitude;
