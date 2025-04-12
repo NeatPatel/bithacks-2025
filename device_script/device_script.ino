@@ -1,4 +1,4 @@
-#include <TinyGPS++.h>
+#include <TinyGPS++.h> // Originally was TinyGPS++
 
 // Define a general purpose undefined value
 #define UNDEFINED_VALUE 0xFFFFFFFF
@@ -25,7 +25,7 @@ void setup() {
 
   // begin the GPS serial communication
   // SERIAL_8N1 basically is the bit protocol definer, (i.e. 8 bits, no parity bits, one stop bit, etc.)
-  neogps.begin(9600, SERIAL_8N1, RXD2, TXD1);
+  neogps.begin(9600, SERIAL_8N1, RXD2, TXD2);
 
   // Set default value of angle to zero
   angle = 0;
@@ -89,17 +89,7 @@ void getAngle() {
     unsigned long y = target_lat - latitude;
 
     // Math formula from calculations of angle based on reference of North
-    if(y == 0) {
-      if(target_lat > latitude) {
-        angle = 90;
-      } else if(target_lat < latitude) {
-        angle = -90;
-      } else {
-        angle = 0;
-      }
-    } else {
-      angle = radiansToDeg(atan2(x/y));
-    }
+    angle = radiansToDeg(atan2((float)x, (float)y));
   }
 }
 
