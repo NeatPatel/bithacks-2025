@@ -1,104 +1,134 @@
-#include "TinyGPS++.h" // Originally was TinyGPS++
+#include "TinyGPS++.h"
+#include <Stepper.h>
 
-// Define a general purpose undefined value
-#define UNDEFINED_VALUE 0xFFFFFFFF
+const int stepsPerRevolution = 2048;  // change this to fit the number of steps per revolution
 
-// Might need to swap the 44 and 43 or 1 and 3 for regular ESP 32
+// ULN2003 Motor Driver Pins
+#define IN1 19
+#define IN2 18
+#define IN3 5
+#define IN4 21
+
+// Serial pins for GPS module
 #define RXD2 16
 #define TXD2 17
+
+// Define classes
 HardwareSerial neogps(1);
 
-// Create GPS instance
+// GPS instance
 TinyGPSPlus gps;
 
-unsigned int longitude = UNDEFINED_VALUE;
-unsigned int latitude = UNDEFINED_VALUE;
-unsigned int target_lng = UNDEFINED_VALUE;
-unsigned int target_lat = UNDEFINED_VALUE;
+// initialize the stepper library
+Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
+
+// Use float for lat/lng (for decimal precision)
+float longitude = NAN;
+float latitude = NAN;
+float target_lng = NAN;
+float target_lat = NAN;
 
 // Angle in degrees
-unsigned int angle = UNDEFINED_VALUE;
+unsigned long angle = 0;
 
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
+  // set the speed at 5 rpm
+  myStepper.setSpeed(10);
 
-  // begin the GPS serial communication
-  // SERIAL_8N1 basically is the bit protocol definer, (i.e. 8 bits, no parity bits, one stop bit, etc.)
+  Serial.begin(115200);
   neogps.begin(9600, SERIAL_8N1, RXD2, TXD2);
 
-  // Set default value of angle to zero
-  angle = 0;
-
-  // Wait 2 seconds, possibly optional
-  delay(2000);
+  delay(2000); // Wait for GPS module to boot
+  Serial.println("Starting GPS...");
 }
 
 void loop() {
-  boolean newData = false;
+  bool newData = false;
   unsigned int wait_time = 1000;
 
-  // Check every "wait_time" milliseconds
-  for(unsigned long start = millis(); millis() - start < wait_time;) {
-    // Make sure the GPS is present
-    while(neogps.available()) {
-      // Check if there was a change in the data
-      if(gps.encode(neogps.read())) {
+  // Read for wait_time milliseconds
+  for (unsigned long start = millis(); millis() - start < wait_time;) {
+    while (neogps.available()) {
+      char c = neogps.read();
+      //Serial.write(c); // Print raw NMEA for debugging
+
+      if (gps.encode(c)) {
         newData = true;
       }
     }
   }
 
-  // if the newData is true
-  if(newData == true) {
-    // Reset the newData for future
+  if (newData) {
     newData = false;
-    // Print GPS satellite value to console
+    Serial.print("Satellites: ");
     Serial.println(gps.satellites.value());
-    // Call print_data function (below)
     set_long_lat();
   }
 
-  // Note for latitude/longitude program user:
-  /*
-    The latitude and longitude variables are defined initially as UNDEFINED_VALUE.
-    This means that you cannot utilize them as though they are always initialized (for example to 0)
-    When they are undefined, you may assume compass must point North, and connection is pending.
-  */
   getAngle();
 }
 
 void set_long_lat() {
-  // Check if the location is valid, if so, set the longitude and latitude variables
-  if(gps.location.isValid() == 1) {
-    longitude = gps.location.lng();
+  if (gps.location.isValid()) {
     latitude = gps.location.lat();
+    longitude = gps.location.lng();
 
-    Serial.println("Longitude: " + longitude);
-    Serial.println("Latitude: " + latitude);
+    Serial.print("Latitude: ");
+    Serial.println(latitude, 8);
+    Serial.print("Longitude: ");
+    Serial.println(longitude, 8);
 
-    // Temporary target location initialization, use button instead
-    if(target_lng == UNDEFINED_VALUE) {
-      target_lng = longitude;
+    // Set target position only once
+    if (isnan(target_lat) || isnan(target_lng)) {
       target_lat = latitude;
+      target_lng = longitude;
+      Serial.println("Target location set.");
     }
+  } else {
+    Serial.println("Location invalid.");
   }
 }
 
-// Get the angle in degrees if latitude and longitude are defined
 void getAngle() {
-  if(latitude != UNDEFINED_VALUE && latitude != UNDEFINED_VALUE) {
-    unsigned long x = target_lng - longitude;
-    unsigned long y = target_lat - latitude;
+  if (!isnan(latitude) && !isnan(longitude) && !isnan(target_lat) && !isnan(target_lng)) {
+    float x = target_lng - longitude;
+    float y = target_lat - latitude;
 
-    // Math formula from calculations of angle based on reference of North
-    angle = radiansToDeg(atan2((float)x, (float)y));
+    unsigned long newAngle = radiansToDeg(atan2(x, y));
+    
+    // Set motor direction HERE
+    setMotorDirection((newAngle - angle));
+
+    angle = radiansToDeg(atan2(x, y));
+
+    Serial.print("Angle: ");
+    Serial.println(angle);
+  } else {
+    Serial.println("Angle not calculated — missing GPS fix.");
   }
 }
 
-unsigned long radiansToDeg(unsigned long radians) {
-  // Convert to float for accurate computation
-  float deg = (float)radians * (180.0 / PI);
-  return (unsigned long)deg;
+unsigned long radiansToDeg(float radians) {
+  return ((unsigned long)(radians * 180.0 / PI) % 360);
 }
 
+// Rotate the motor accordingly, assume the angle is always between 0 and 360 DEGREES
+void setMotorDirection(unsigned long deltaTheta) {
+  unsigned long plus = deltaTheta + 360;
+  unsigned long minus = deltaTheta + 360;
+  if(abs((int)deltaTheta) > abs((int)plus)) {
+    deltaTheta += 360;
+  } else if(abs((int)deltaTheta) > abs((int)minus)) {
+    deltaTheta -= 360;
+  }
+
+  float conversionFactor = 2048 / 360.0;
+
+  // Convert the deltaTheta to steps
+  int steps = (int)(conversionFactor * deltaTheta);
+
+  // Step the motor
+  myStepper.step(steps);
+
+  delay(1000);
+}
