@@ -207,7 +207,7 @@ void calibrate(sensors_event_t gyroSensor)
   Serial.println("Currently Calibrating...");
   // Basically getting the average values, after timePasses seconds of reading
 
-  unsigned long timePassed = 10 * 1000; // calibration time
+  unsigned long timePassed = 20 * 1000; // calibration time
   unsigned long timeStart = millis();
 
   // Acumulators for the average readings
@@ -232,7 +232,7 @@ void calibrate(sensors_event_t gyroSensor)
   yDegOffset = yTotal / counter;
   zDegOffset = zTotal / counter;
 
-  Serial.println(zDegOffset);
+  //Serial.println(zDegOffset);
 
   Serial.println("Finish Calibrating.");
 }
@@ -248,7 +248,7 @@ double updateYawAngle(sensors_event_t gyroSensor)
 
   // Constant to format angle
   // 33: so every 90 degrees, the value is 1.
-  unsigned float sensorConst = 33;
+  float sensorConst = 33;
   float sampleRate = 0.00001 * sensorConst;
 
   // Read the z value
@@ -289,7 +289,7 @@ double updateYawAngle(sensors_event_t gyroSensor)
 
   double output = formatYawAngle();
 
-  return output;
+  return -1 * output;
 }
 
 double formatYawAngle(void)
