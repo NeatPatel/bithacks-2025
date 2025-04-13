@@ -6,24 +6,32 @@
 // For SPI mode, we need a CS pin
 #define LSM_CS 10
 // For software-SPI mode we need SCK/MOSI/MISO pins
-#define LSM_SCK 13
-#define LSM_MISO 12
+#define LSM_SCK 12
+#define LSM_MISO 13
 #define LSM_MOSI 11
 
 Adafruit_LSM6DSOX sox;
 
-// global var...
-float yawAngle = 0;
+// varible to store yawAngle
+static double yawAngle = 0;
 
 // Get angle offset values
-float *xDegOffset = NULL;
-float *yDegOffset = NULL;
-float *zDegOffset = NULL;
+double xDegOffset;
+double yDegOffset;
+double zDegOffset;
 
 // Setting up gyro sensor config
 sensors_event_t accel;
 sensors_event_t gyro;
 sensors_event_t temp;
+
+// Define functions
+double updateYawAngle(sensors_event_t gyroSensor);
+
+void calibrate(sensors_event_t gyroSensor);
+
+double formatYawAngle(void);
+
 
 void setup(void) {
   Serial.begin(115200);
@@ -33,11 +41,20 @@ void setup(void) {
   Serial.println("Adafruit LSM6DSOX test!");
 
   if (!sox.begin_I2C()) {
-    // if (!sox.begin_SPI(LSM_CS)) {
-    // if (!sox.begin_SPI(LSM_CS, LSM_SCK, LSM_MISO, LSM_MOSI)) {
-    // Serial.println("Failed to find LSM6DSOX chip");
-    while (1) {
-      delay(10);
+    if (!sox.begin_SPI(LSM_CS)) {
+      if (!sox.begin_SPI(LSM_CS, LSM_SCK, LSM_MISO, LSM_MOSI)) {
+        Serial.println("Failed to find LSM6DSOX chip");
+        Serial.print("MOSI: ");
+        Serial.println(MOSI);
+        Serial.print("SCK: ");
+        Serial.println(SCK);
+        Serial.print("MISO: ");
+        Serial.println(MISO);
+
+        while (1) {
+          delay(10);
+        }
+      }
     }
   }
 
@@ -158,14 +175,19 @@ void setup(void) {
     break;
   }
 
+  // Set the offset values as zero
+  xDegOffset = 0;
+  yDegOffset = 0;
+  zDegOffset = 0;
+
   // Something from the Adafruit's tutorial???
   sox.getEvent(&accel, &gyro, &temp);
 
-  // Calibrating gyro
-  calibrate(gyro, xDegOffset, yDegOffset, zDegOffset);
+  calibrate(gyro);
 }
 
 void loop() {
+  sox.getEvent(&accel, &gyro, &temp);
 
   /* Display the results (acceleration is measured in m/s^2) */
   // Serial.print("\t\tAccel X: ");
@@ -177,27 +199,26 @@ void loop() {
   // Serial.println(" m/s^2 ");
 
   /* Display the results (rotation is measured in rad/s) */
-  yawAngle += rawYawAngle(gyro) - *zDegOffset;
-  Serial.print(rawYawAngle(gyro));
+  Serial.println(updateYawAngle(gyro));
 }
 
-void calibrate(sensors_event_t gyroSensor, float* degX, float* degY, float* degZ)
+void calibrate(sensors_event_t gyroSensor)
 {
-  Serial.print("currently calibrating...");
+  Serial.println("Currently Calibrating...");
   // Basically getting the average values, after timePasses seconds of reading
 
   unsigned long timePassed = 10 * 1000; // calibration time
   unsigned long timeStart = millis();
 
   // Acumulators for the average readings
-  float xTotal = 0;
-  float yTotal = 0;
-  float zTotal = 0;
+  double xTotal = 0;
+  double yTotal = 0;
+  double zTotal = 0;
 
   // Counter for how many readings occured
   int counter = 0;
 
-  while (timeStart - millis() < timePassed)
+  while (millis() - timeStart < timePassed)
   {
     xTotal += gyroSensor.gyro.x;
     yTotal += gyroSensor.gyro.y;
@@ -207,24 +228,97 @@ void calibrate(sensors_event_t gyroSensor, float* degX, float* degY, float* degZ
   }
 
   // Comput averages, store to pointers
-  *degX = xTotal / counter;
-  *degY = yTotal / counter;
-  *degZ = zTotal / counter;
+  xDegOffset = xTotal / counter;
+  yDegOffset = yTotal / counter;
+  zDegOffset = zTotal / counter;
 
-  Serial.print("finish calibrating...");
+  Serial.println(zDegOffset);
+
+  Serial.println("Finish Calibrating.");
 }
 
-float rawYawAngle(sensors_event_t gyroSensor)
+// NOTE, prevAngle is a global variable...
+double updateYawAngle(sensors_event_t gyroSensor)
 {
   // For yaw angle, only focus on z-axis.
+  //  - angle used trapezoidal apporox, where
+  //.   b1: first angle reading
+  //.   b2: second angle reading
+  //.    h: sampleRate
 
-  // Get timeStart to later get change of time
-  unsigned long timeStart = millis();
+  // Constant to format angle
+  // 33: so every 90 degrees, the value is 1.
+  unsigned float sensorConst = 33;
+  float sampleRate = 0.00001 * sensorConst;
 
   // Read the z value
-  float angleRate = gyroSensor.gyro.z;
+  float base1 = gyroSensor.gyro.z;
+  // Serial.print("1 ");
+  // Serial.println(base1);
 
+  // delay the same amout as sampling rate
+  delay(sampleRate * 1000);
 
-  // (d_theta / dt) * (dt) ~= theta
-  return angleRate * (millis() - timeStart);
+  // Read z value again
+  float base2 = gyroSensor.gyro.z;
+  // Serial.print("2 ");
+  // Serial.println(base2);
+
+  // Find area uder curve (area of trapezoid):
+  double area = (base1 + base2 + zDegOffset) * (0.5);
+  //Serial.print("dTheta: ");
+  //Serial.println(area);
+  area *= sampleRate;
+
+  //Serial.println(area);
+
+  // update prevAngle
+  yawAngle += area;
+
+  // Reset value if yawAngle > 4, or yawAngle < -4
+  if (yawAngle > 4)
+  {
+    yawAngle -= 4;
+  }
+  if (yawAngle < -4)
+  {
+    yawAngle += 4;
+  }
+
+  //Serial.println(yawAngle);
+
+  double output = formatYawAngle();
+
+  return output;
+}
+
+double formatYawAngle(void)
+{
+  // yawAngle is 1 when 90 degrees, so the range should be
+  // from (-2, 2). 
+
+  // Get the true angle, where
+  // left side of circle is positive
+  // right side of circle is negative
+  // both side range from 0-180 deg
+  
+
+  double formatAngle = yawAngle;
+
+  // format if negative
+  if (formatAngle > 2)
+  {
+    // Update angle to negative
+    formatAngle = -2 + (formatAngle - 2);
+  }
+  if (formatAngle < -2)
+  {
+    // update to positive
+    formatAngle = 2 + (formatAngle + 2);
+  }
+
+  // Multiply 90 to correct format
+  formatAngle *= 90;
+
+  return formatAngle;
 }
