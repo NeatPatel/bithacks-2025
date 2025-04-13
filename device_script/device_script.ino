@@ -1,17 +1,21 @@
-#include "TinyGPS++.h"
+#include <TinyGPS++.h>
 #include <Stepper.h>
 
 const int stepsPerRevolution = 2048;  // change this to fit the number of steps per revolution
 
+/*
+  10, 11, 12, 13
+*/
+
 // ULN2003 Motor Driver Pins
-#define IN1 19
-#define IN2 18
-#define IN3 5
-#define IN4 21
+#define IN1 4 // 19 for ESP 32, 4 for ESP 32 S3
+#define IN2 5 // 18 for ESP 32, 5 for ESP 32 S3
+#define IN3 6 // 5 for ESP 32, 6 for ESP 32 S3
+#define IN4 7 // 21 for ESP 32, 7 for ESP 32 S3
 
 // Serial pins for GPS module
-#define RXD2 16
-#define TXD2 17
+#define RXD2 16 // 16 for ESP 32, 44 for ESP 32 S3
+#define TXD2 17 // 17 for ESP 32, 43 for ESP 32 S3
 
 // Define classes
 HardwareSerial neogps(1);
@@ -20,25 +24,31 @@ HardwareSerial neogps(1);
 TinyGPSPlus gps;
 
 // initialize the stepper library
-Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
+Stepper myStepper(stepsPerRevolution, IN1, IN2, IN3, IN4);
 
 // Use float for lat/lng (for decimal precision)
-float longitude = NAN;
-float latitude = NAN;
-float target_lng = NAN;
-float target_lat = NAN;
+float longitude = 74.0060; // -117.837425;
+float latitude = 40.7128; // 33.646526;
+float target_lng = 99.1332; // -117.83924;
+float target_lat = 19.4326; // 33.646526
 
 // Angle in degrees
-unsigned long angle = 0;
+long angle = 0;
 
 void setup() {
+  #if CONFIG_USB_CDC_ENABLED
+  Serial.setTxTimeoutMs(0);  // Optional: prevents USB CDC blocking
+  #endif
+
+  //Serial.begin(115200);
+
   // set the speed at 5 rpm
   myStepper.setSpeed(10);
 
   Serial.begin(115200);
   neogps.begin(9600, SERIAL_8N1, RXD2, TXD2);
 
-  delay(2000); // Wait for GPS module to boot
+  delay(5000); // Wait for GPS module to boot
   Serial.println("Starting GPS...");
 }
 
@@ -62,6 +72,7 @@ void loop() {
     newData = false;
     Serial.print("Satellites: ");
     Serial.println(gps.satellites.value());
+    Serial.println(gps.location.lat());
     set_long_lat();
   }
 
@@ -70,6 +81,8 @@ void loop() {
 
 void set_long_lat() {
   if (gps.location.isValid()) {
+    Serial.println("GPS LOCATION VALID");
+
     latitude = gps.location.lat();
     longitude = gps.location.lng();
 
@@ -91,15 +104,18 @@ void set_long_lat() {
 
 void getAngle() {
   if (!isnan(latitude) && !isnan(longitude) && !isnan(target_lat) && !isnan(target_lng)) {
-    float x = target_lng - longitude;
-    float y = target_lat - latitude;
+    // float x = target_lng - longitude;
+    // float y = target_lat - latitude;
 
-    unsigned long newAngle = radiansToDeg(atan2(x, y));
+    float newAngle = getBearingToTarget(latitude, longitude, target_lat, target_lng);
+
+    Serial.print("New Angle: ");
+    Serial.println(newAngle);
     
     // Set motor direction HERE
     setMotorDirection((newAngle - angle));
 
-    angle = radiansToDeg(atan2(x, y));
+    angle = newAngle;
 
     Serial.print("Angle: ");
     Serial.println(angle);
@@ -108,14 +124,33 @@ void getAngle() {
   }
 }
 
-unsigned long radiansToDeg(float radians) {
-  return ((unsigned long)(radians * 180.0 / PI) % 360);
+float getBearingToTarget(float latitude, float longitude, float target_lat, float target_lng) {
+  // Convert degrees to radians
+  float lat1 = radians(latitude);
+  float lat2 = radians(target_lat);
+  float deltaLon = radians(target_lng - longitude);
+
+  float x = sin(deltaLon) * cos(lat2);
+  float y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLon);
+
+  float bearingRad = atan2(x, y);
+  float bearingDeg = degrees(bearingRad);
+
+  // Normalize to [-180, 180]
+  if (bearingDeg > 180.0) bearingDeg -= 360.0;
+  if (bearingDeg < -180.0) bearingDeg += 360.0;
+
+  return bearingDeg;
+}
+
+long radiansToDeg(float radians) {
+  return ((long)(radians * 180.0 / PI));
 }
 
 // Rotate the motor accordingly, assume the angle is always between 0 and 360 DEGREES
-void setMotorDirection(unsigned long deltaTheta) {
-  unsigned long plus = deltaTheta + 360;
-  unsigned long minus = deltaTheta + 360;
+void setMotorDirection(float deltaTheta) {
+  float plus = deltaTheta + 360;
+  float minus = deltaTheta - 360;
   if(abs((int)deltaTheta) > abs((int)plus)) {
     deltaTheta += 360;
   } else if(abs((int)deltaTheta) > abs((int)minus)) {
@@ -126,6 +161,9 @@ void setMotorDirection(unsigned long deltaTheta) {
 
   // Convert the deltaTheta to steps
   int steps = (int)(conversionFactor * deltaTheta);
+
+  Serial.print("Steps: ");
+  Serial.println(steps);
 
   // Step the motor
   myStepper.step(steps);
