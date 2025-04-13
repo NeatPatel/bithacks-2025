@@ -99,7 +99,8 @@ void getAngle() {
     // Set motor direction HERE
     setMotorDirection((newAngle - angle));
 
-    angle = radiansToDeg(atan2(x, y));
+    angle = newAngle;
+    
 
     Serial.print("Angle: ");
     Serial.println(angle);
