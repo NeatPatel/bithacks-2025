@@ -1,11 +1,11 @@
-#include <TinyGPS++.h> // Originally was TinyGPS++
+#include "TinyGPS++.h" // Originally was TinyGPS++
 
 // Define a general purpose undefined value
 #define UNDEFINED_VALUE 0xFFFFFFFF
 
-// Might need to swap the 44 and 43
-#define RXD2 44
-#define TXD2 43
+// Might need to swap the 44 and 43 or 1 and 3 for regular ESP 32
+#define RXD2 16
+#define TXD2 17
 HardwareSerial neogps(1);
 
 // Create GPS instance
@@ -73,6 +73,9 @@ void set_long_lat() {
   if(gps.location.isValid() == 1) {
     longitude = gps.location.lng();
     latitude = gps.location.lat();
+
+    Serial.println("Longitude: " + longitude);
+    Serial.println("Latitude: " + latitude);
 
     // Temporary target location initialization, use button instead
     if(target_lng == UNDEFINED_VALUE) {
