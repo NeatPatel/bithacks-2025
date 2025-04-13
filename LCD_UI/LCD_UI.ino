@@ -124,12 +124,12 @@ void calibrate(sensors_event_t gyroSensor)
   Serial.println("Currently Calibrating...");
   // Basically getting the average values, after timePasses seconds of reading
 
-  unsigned long timePassed = 10 * 1000; // calibration time
+  unsigned long timePassed = 15 * 1000; // calibration time
   unsigned long timeStart = millis();
 
   // Acumulators for the average readings
-  double xTotal = 0;
-  double yTotal = 0;
+  //double xTotal = 0;
+  //double yTotal = 0;
   double zTotal = 0;
 
   // Counter for how many readings occured
@@ -137,16 +137,16 @@ void calibrate(sensors_event_t gyroSensor)
 
   while (millis() - timeStart < timePassed)
   {
-    xTotal += gyroSensor.gyro.x;
-    yTotal += gyroSensor.gyro.y;
+    //xTotal += gyroSensor.gyro.x;
+    //yTotal += gyroSensor.gyro.y;
     zTotal += gyroSensor.gyro.z;
 
     counter++;
   }
 
   // Comput averages, store to pointers
-  xDegOffset = xTotal / counter;
-  yDegOffset = yTotal / counter;
+  //xDegOffset = xTotal / counter;
+  //yDegOffset = yTotal / counter;
   zDegOffset = zTotal / counter;
 
   //Serial.println(zDegOffset);
@@ -157,65 +157,35 @@ void calibrate(sensors_event_t gyroSensor)
 // NOTE, prevAngle is a global variable...
 double updateYawAngle(sensors_event_t gyroSensor)
 {
-  // For yaw angle, only focus on z-axis.
-  //  - angle used trapezoidal apporox, where
-  //.   b1: first angle reading
-  //.   b2: second angle reading
-  //.    h: sampleRate
-  static bool calculate = false;
+  // Constant to multiply the angle measurement
+  double scaleFactor = 9.2;
   
-  // Constant to format angle
-  // 33: so every 90 degrees, the value is 1.
-  float sensorConst = 33;
-  float sampleRate = 0.0001 * sensorConst;
-  unsigned long timeInterval = sampleRate * 1000; 
+  // Get the theta, because I have spent 10 hours
+  // on configuring the sensor, and I really don't
+  // have the mental capacity to explain how it works anymore
+  double theta = gyroSensor.gyro.z - zDegOffset;
 
+  yawAngle += (scaleFactor * theta);
 
-  // Read the z value
-  static float base1 = gyroSensor.gyro.z;
-  static float base2  = 0;
-  double area = 0;
-  if(!calculate){
-    base1 = gyroSensor.gyro.z;
-    delay(timeInterval);
-    base2 = gyroSensor.gyro.z;
-    area = (base1 + base2 + zDegOffset) * (0.5);
-    calculate = true;
-    area *= sampleRate;
-    yawAngle += area;
-  }
-  // Serial.print("1 ");
-  // Serial.println(base1);
+  // Serial.println(scaleFactor * theta);
+  // Serial.println(yawAngle);
 
-  // wait the same amout as sampling rate
-  static unsigned long startTime = 0;
-  if(millis() - startTime >= timeInterval)
+  // Angle can only be between (-180, 180), where
+  // - (0, 180) if rotating clockwise
+  // - (-180, 0) if rotating counterclockwise
+  if (yawAngle > 180)
   {
-    base1 = base2;
-    base2 = gyroSensor.gyro.z;
-    area = (base1 + base2 - 2 * zDegOffset) * (0.5);
-    startTime = millis();
-    area *= sampleRate;
-    yawAngle += area;
+    // Update angle to negative
+    yawAngle = -180 + (yawAngle - 180);
   }
-  
-
-
-  // Reset value if yawAngle > 4, or yawAngle < -4
-  if (yawAngle > 4)
+  if (yawAngle < -180)
   {
-    yawAngle -= 4;
-  }
-  if (yawAngle < -4)
-  {
-    yawAngle += 4;
+    // update to positive
+    yawAngle = 180 + (yawAngle + 180);
   }
 
-  //Serial.println(yawAngle);
-
-  double output = formatYawAngle();
-
-  return -1 * output;
+  // Negat the yawAngle, to match the sign with the servo...
+  return -1 * yawAngle;
 }
 
 double formatYawAngle(void)
